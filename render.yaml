@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: fontanezzi-homologacao
+    runtime: node
+    plan: starter
+    rootDir: fontanezzi-mvp
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    disk:
+      name: fontanezzi-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: FONTANEZZI_DATA_DIR
+        value: /var/data
+      - key: COOKIE_SECURE
+        value: '1'
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: FONTANEZZI_INTEGRATION_KEY
+        sync: false
