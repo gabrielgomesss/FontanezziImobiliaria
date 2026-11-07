@@ -1,23 +1,19 @@
 services:
   - type: web
-    name: fontanezzi-homologacao
+    name: fontanezzi-demo
     runtime: node
     plan: free
     rootDir: fontanezzi-mvp
     buildCommand: npm install --omit=dev
     startCommand: npm start
     healthCheckPath: /healthz
-    disk:
-      name: fontanezzi-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
         value: 22.16.0
       - key: FONTANEZZI_DATA_DIR
-        value: /var/data
+        value: /tmp/fontanezzi-data
       - key: COOKIE_SECURE
         value: '1'
       - key: ADMIN_PASSWORD
