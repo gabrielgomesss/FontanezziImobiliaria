@@ -2,7 +2,7 @@ services:
   - type: web
     name: fontanezzi-homologacao
     runtime: node
-    plan: starter
+    plan: free
     rootDir: fontanezzi-mvp
     buildCommand: npm install --omit=dev
     startCommand: npm start
