@@ -113,40 +113,52 @@ const contractOwners=cid=>db.prepare('SELECT p.* FROM contract_owners co JOIN pe
 const ownerQualification=p=>[p.name,p.nationality,p.profession,p.rg?'RG '+p.rg:'',p.document?'CPF/CNPJ '+p.document:''].filter(Boolean).join(', ');
 const renderContract=(c,body)=>{const owners=contractOwners(c.id);if(!owners.length&&c.owner_name)owners.push({name:c.owner_name,document:c.owner_document});const ownerNames=owners.map(x=>x.name).join('; ')||'Proprietário não informado';const ownerDetails=owners.map(ownerQualification).join('; ')||'Proprietário não informado';const tenantDetails=[c.tenant_name,c.tenant_nationality,c.tenant_profession,c.tenant_rg?'RG '+c.tenant_rg:'',c.tenant_document?'CPF/CNPJ '+c.tenant_document:''].filter(Boolean).join(', ')||'Locatário não informado';const fields={proprietario:ownerNames,proprietarios:ownerNames,qualificacao_proprietarios:ownerDetails,documento_proprietario:owners.map(x=>x.document||'').join('; '),inquilino:c.tenant_name||'Não informado',locatarios:c.tenant_name||'Não informado',qualificacao_locatarios:tenantDetails,documento_inquilino:c.tenant_document||'Não informado',rg_inquilino:c.tenant_rg||'',nacionalidade_inquilino:c.tenant_nationality||'',profissao_inquilino:c.tenant_profession||'',imovel:c.property_title,endereco:c.address,complemento:c.complement||'',endereco_completo:[c.address,c.complement,c.city].filter(Boolean).join(' — '),cidade:c.city,inicio:brDate(c.start_date),termino:brDate(c.end_date),prazo_meses:String(Math.max(0,(Number(c.end_date.slice(0,4))-Number(c.start_date.slice(0,4)))*12+Number(c.end_date.slice(5,7))-Number(c.start_date.slice(5,7)))),vencimento:String(c.rent_due_day||'A definir'),aluguel:brMoney(c.rent),indice:c.index_name,garantia:c.guarantee_type||'A definir',detalhes_garantia:c.guarantee_details||'A definir',carencia:c.grace_period||'Não prevista',data_geracao:brDate(new Date().toISOString().slice(0,10))};return body.replace(/\{\{([a-z_]+)\}\}/g,(_,key)=>fields[key]??`{{${key}}`)};
 
-// Gerador PDF sem dependências: paginação, cabeçalho, rodapé e formatação segura em texto.
+// PDF vetorial: métricas reais Helvetica/Helvetica-Bold em unidades de 1/1000 em WinAnsi.
+const PDF_FONT_WIDTHS=[[761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,278,333,556,556,556,556,260,556,333,737,370,556,584,333,737,333,400,584,333,333,333,556,537,278,333,333,365,556,834,834,834,611,667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278,556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500],[761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,761,278,333,556,556,556,556,280,556,333,737,370,556,584,333,737,333,400,584,333,333,333,611,556,278,333,333,365,556,834,834,834,611,722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278,611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556]];
 const pdfDocument=(title,content)=>{
- const clean=s=>String(s??'').normalize('NFC').replace(/[\u2013\u2014]/g,'-').replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"').replace(/[^\x0A\x0D\x20-\xFF]/g,'?');
+ const clean=s=>String(s??'').normalize('NFC').replace(/[\u2013\u2014]/g,'-').replace(/[\u2018\u2019]/g,"'").replace(/[\u201c\u201d]/g,'"').replace(/\u00a0/g,' ').replace(/\u2026/g,'...').replace(/[^\x0A\x0D\x20-\xFF]/g,'?');
  const esc=s=>clean(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)');
- const color={navy:'0.09 0.16 0.26',blue:'0.12 0.36 0.57',gray:'0.40 0.45 0.52',ink:'0.17 0.22 0.30'};
+ const colors={navy:'0.09 0.16 0.26',blue:'0.12 0.36 0.57',gray:'0.40 0.45 0.52',ink:'0.17 0.22 0.30'};
  const objects=[null],add=s=>{objects.push(s);return objects.length-1};
  const regular=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
  const bold=add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
- const pagesObj=add('');const pages=[];let commands=[],y=730;
- const text=(x,yy,str,size=10,font='F1',tone='ink')=>{if(!str)return;commands.push(`BT /${font} ${size} Tf ${color[tone]} rg 1 0 0 1 ${x} ${yy} Tm (${esc(str)}) Tj ET`)};
- const line=(yy)=>commands.push(`0.84 0.88 0.92 RG 0.7 w 44 ${yy} m 551 ${yy} l S`);
- const newPage=()=>{commands=[];commands.push(`0.09 0.16 0.26 rg 0 800 595 42 re f`);text(44,815,'FONTANEZZI  |  IMOBILIARIA',12,'F2','navy'); // reversed white over dark bar below
- commands.pop();commands.push(`BT /F2 12 Tf 1 1 1 rg 1 0 0 1 44 815 Tm (${esc('FONTANEZZI  |  IMOBILIARIA')}) Tj ET`);
- text(44,783,'DOCUMENTO CONTRATUAL  /  '+clean(title).slice(0,60),8,'F2','blue');line(772);y=749};
- const endPage=()=>{line(48);text(44,33,'Fontanezzi Imobiliaria  |  Documento gerado pelo sistema',8,'F1','gray');text(500,33,`Pagina ${pages.length+1}`,8,'F1','gray');const stream=commands.join('\n');const id=add(`<< /Length ${Buffer.byteLength(stream,'latin1')} >>\nstream\n${stream}\nendstream`);pages.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${regular} 0 R /F2 ${bold} 0 R >> >> /Contents ${id} 0 R >>`))};
- const segments=line=>{const result=[];const re=/\*\*([^*]+)\*\*/g;let start=0,m;while((m=re.exec(line))){if(m.index>start)result.push({text:line.slice(start,m.index),bold:false});result.push({text:m[1],bold:true});start=re.lastIndex}if(start<line.length)result.push({text:line.slice(start),bold:false});return result};
+ const pagesObj=add('');const pages=[];let commands=[],y=748;
+ const measure=(str,size,isBold)=>{const w=PDF_FONT_WIDTHS[isBold?1:0];let sum=0;for(const c of str)sum+=w[c.charCodeAt(0)]??550;return sum*size/1000};
+ const text=(x,yy,str,size=10,isBold=false,tone='ink')=>{if(!str)return;commands.push(`BT /F${isBold?2:1} ${size} Tf ${colors[tone]} rg 1 0 0 1 ${x.toFixed(2)} ${yy.toFixed(2)} Tm (${esc(str)}) Tj ET`)};
+ const rule=yy=>commands.push(`0.84 0.88 0.92 RG 0.7 w 44 ${yy} m 551 ${yy} l S`);
+ const begin=()=>{commands=[];commands.push('0.09 0.16 0.26 rg 0 800 595 42 re f');commands.push(`BT /F2 12 Tf 1 1 1 rg 1 0 0 1 44 815 Tm (${esc('FONTANEZZI  |  IMOBILIARIA')}) Tj ET`);text(44,782,'DOCUMENTO CONTRATUAL  /  '+clean(title).slice(0,55),8,true,'blue');rule(772);y=748};
+ const finish=()=>{rule(48);text(44,33,'Fontanezzi Imobiliaria  |  Documento gerado pelo sistema',8,false,'gray');text(503,33,`Pagina ${pages.length+1}`,8,false,'gray');const stream=commands.join('\n');const id=add(`<< /Length ${Buffer.byteLength(stream,'latin1')} >>\nstream\n${stream}\nendstream`);pages.push(add(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 ${regular} 0 R /F2 ${bold} 0 R >> >> /Contents ${id} 0 R >>`))};
  const heading=s=>/^(?:##\s+|CONTRATO DE |QUADRO RESUMO$|CL[AÁ]USULAS E CONDI[CÇ][OÕ]ES$)/i.test(s.trim());
  const label=s=>/^(?:\d+[.)]\s*)?(?:LOCADOR(?:A|ES)?|LOCAT[AÁ]RIOS?|IM[OÓ]VEL OBJETO DA LOCA[CÇ][AÃ]O|USO E FINALIDADE|PRAZO DO CONTRATO|IN[IÍ]CIO|T[EÉ]RMINO|DIA DO VENCIMENTO DO ALUGUEL|VALOR DO ALUGUEL INICIAL|MULTA POR INFRA[CÇ][AÃ]O CONTRATUAL|GARANTIA)\s*:/i.test(s.trim());
- newPage();
+ const runs=s=>{const a=[];const re=/\*\*([^*]+)\*\*/g;let at=0,m;while((m=re.exec(s))){if(m.index>at)a.push({s:s.slice(at,m.index),b:false});a.push({s:m[1],b:true});at=re.lastIndex}if(at<s.length)a.push({s:s.slice(at),b:false});return a};
+ begin();
  for(const original of clean(content).split(/\r?\n/)){
   const raw=original.trim().replace(/^##\s+/,'');if(!raw){y-=7;continue}
-  const isHead=heading(original.trim()),isLabel=label(raw),isClause=/^\d{1,2}[ªº]\)/.test(raw),size=isHead?13:isLabel?10.5:10;
-  const isBold=isHead||isLabel||isClause;const tokens=segments(raw).flatMap(x=>x.text.split(/(\s+)/).filter(Boolean).map(z=>({text:z,bold:x.bold||isBold})));
-  const rows=[[]];let width=0;const max=507;
-  for(const token of tokens){const approx=token.text.length*size*(token.bold?0.56:0.51);if(width+approx>max&&rows.at(-1).length&&token.text.trim()){rows.push([]);width=0}if(!width&&!token.text.trim())continue;rows.at(-1).push(token);width+=approx}
-  const leading=isHead?19:15;const needed=rows.length*leading+(isHead?10:isLabel?6:3);
-  if(y-needed<66){endPage();newPage()}
-  if(isHead)y-=8;else if(isLabel)y-=3;
-  if(isHead){commands.push(`0.93 0.96 0.98 rg 42 ${y-rows.length*leading+2} 510 ${rows.length*leading+8} re f`)}
-  for(const row of rows){let x=48;for(const token of row){const font=token.bold?'F2':'F1';text(x,y,token.text,size,font,isHead?'navy':isLabel?'blue':'ink');x+=token.text.length*size*(token.bold?0.56:0.51)}y-=leading}
-  y-=isHead?8:isLabel?3:2;
+  const isHead=heading(original.trim()),isLabel=label(raw),isClause=/^\d{1,2}[ªº]\)/.test(raw),size=isHead?13:isLabel?10.5:10,leading=isHead?20:15;
+  const tokens=[];for(const run of runs(raw))for(const m of run.s.matchAll(/\S+|\s+/g))tokens.push({s:m[0],b:run.b||isHead||isLabel});
+  const rows=[[]];let used=0;
+  for(const token of tokens){
+   if(!token.s.trim()&&!used)continue;
+   let str=token.s;
+   while(str){
+    const w=measure(str,size,token.b);
+    if(used+w<=499){rows.at(-1).push({s:str,b:token.b});used+=w;break}
+    if(used>0){rows.push([]);used=0;if(!str.trim())break;continue}
+    // Palavra mais larga que a linha: divide por largura real de glifo.
+    let take=1;while(take<str.length&&measure(str.slice(0,take+1),size,token.b)<=499)take++;
+    rows.at(-1).push({s:str.slice(0,take),b:token.b});str=str.slice(take);used=measure(rows.at(-1).at(-1).s,size,token.b);
+    if(str){rows.push([]);used=0}
+   }
+  }
+  const extra=isHead?18:isLabel?9:5;
+  if(y-rows.length*leading-extra<64){finish();begin()}
+  if(isHead){y-=8;commands.push(`0.93 0.96 0.98 rg 42 ${(y-rows.length*leading+4).toFixed(2)} 510 ${(rows.length*leading+8).toFixed(2)} re f`)}
+  else if(isLabel)y-=4;
+  for(const row of rows){let x=48;for(const t of row){text(x,y,t.s,size,t.b,isHead?'navy':isLabel?'blue':'ink');x+=measure(t.s,size,t.b)}y-=leading}
+  y-=isHead?8:isLabel?4:3;
  }
- endPage();objects[pagesObj]=`<< /Type /Pages /Kids [${pages.map(x=>x+' 0 R').join(' ')}] /Count ${pages.length} >>`;const catalog=add(`<< /Type /Catalog /Pages ${pagesObj} 0 R >>`);
- let data='%PDF-1.4\n',offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(data,'latin1');data+=`${i} 0 obj\n${objects[i]}\nendobj\n`};const xref=Buffer.byteLength(data,'latin1');data+=`xref\n0 ${objects.length}\n0000000000 65535 f \n`+offsets.slice(1).map(x=>String(x).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${objects.length} /Root ${catalog} 0 R >>\nstartxref\n${xref}\n%%EOF`;return Buffer.from(data,'latin1')
+ finish();objects[pagesObj]=`<< /Type /Pages /Kids [${pages.map(x=>x+' 0 R').join(' ')}] /Count ${pages.length} >>`;const catalog=add(`<< /Type /Catalog /Pages ${pagesObj} 0 R >>`);
+ let data='%PDF-1.4\n',offsets=[0];for(let i=1;i<objects.length;i++){offsets[i]=Buffer.byteLength(data,'latin1');data+=`${i} 0 obj\n${objects[i]}\nendobj\n`};const xref=Buffer.byteLength(data,'latin1');data+=`xref\n0 ${objects.length}\n0000000000 65535 f \n`+offsets.slice(1).map(x=>String(x).padStart(10,'0')+' 00000 n \n').join('')+`trailer\n<< /Size ${objects.length} /Root ${catalog} 0 R >>\nstartxref\n${xref}\n%%EOF`;return Buffer.from(data,'latin1');
 };
 const lateCharges=(amount,dueDate,asOf,feePercent,interestPercent)=>{const days=Math.max(0,Math.floor((Date.parse(asOf+'T00:00:00Z')-Date.parse(dueDate+'T00:00:00Z'))/86400000));const fine=days?Math.round(amount*feePercent)/100:0;const interest=days?Math.round(amount*interestPercent*days/30)/100:0;return {days_overdue:days,late_fee:Number(fine.toFixed(2)),interest:Number(interest.toFixed(2)),total:Number((amount+fine+interest).toFixed(2))}};
 const runRecurring=(today=new Date().toISOString().slice(0,10))=>{const day=Number(today.slice(8,10)),reference=today.slice(0,7);let count=0;const rules=db.prepare(`SELECT b.*,c.start_date,c.end_date,c.status FROM billing_rules b JOIN contracts c ON c.id=b.contract_id WHERE b.mode='automatic' AND c.status='active' AND b.issue_day<=? AND c.start_date<=? AND c.end_date>=?`).all(day,today,today);db.exec('BEGIN IMMEDIATE');try{for(const b of rules){const dueMonth=b.due_day>=b.issue_day?reference:new Date(Date.UTC(Number(reference.slice(0,4)),Number(reference.slice(5,7)),1)).toISOString().slice(0,7);const due=`${dueMonth}-${String(b.due_day).padStart(2,'0')}`;const result=db.prepare('INSERT OR IGNORE INTO payments(contract_id,reference,amount,due_date) VALUES(?,?,?,?)').run(b.contract_id,reference,b.amount,due);if(result.changes){count++;audit(b.updated_by,'generate_recurring_charge','contracts',b.contract_id)}}db.prepare('INSERT INTO billing_runs(ran_at,generated,note) VALUES(?,?,?)').run(today,count,'Cobranças internas geradas; boletos Sicredi NÃO emitidos');db.exec('COMMIT')}catch(e){db.exec('ROLLBACK');throw e}return count};
@@ -178,6 +190,19 @@ const body=async req=>{let s='';for await(const chunk of req){s+=chunk;if(s.leng
 const exists=(table,n)=>{if(!db.prepare(`SELECT id FROM ${table} WHERE id=?`).get(n))err(404,'Registro não encontrado')};
 const imageBytes=b=>{const mime=en(b.mime,['image/jpeg','image/png','image/webp']),data=str(b.data,14_000_000),raw=Buffer.from(data,'base64');if(raw.length<32||raw.length>10_000_000)err(400,'A foto deve ter entre 32 bytes e 10 MB');const jpeg=raw[0]===255&&raw[1]===216&&raw[2]===255,png=raw.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])),webp=raw.toString('ascii',0,4)==='RIFF'&&raw.toString('ascii',8,12)==='WEBP';if(!((mime==='image/jpeg'&&jpeg)||(mime==='image/png'&&png)||(mime==='image/webp'&&webp)))err(400,'O conteúdo da foto não corresponde ao formato declarado');return {mime,raw}};
 const routes=async(req,res,path,method,u)=>{
+ if(/^\/api\/cep\/\d{8}$/.test(path)&&method==='GET'){
+  auth(u,['admin','broker']);const digits=path.slice(-8);
+  const sources=[`https://viacep.com.br/ws/${digits}/json/`,`https://brasilapi.com.br/api/cep/v1/${digits}`];
+  for(const source of sources){try{
+   const response=await fetch(source,{signal:AbortSignal.timeout(4500),headers:{Accept:'application/json'}});
+   if(response.status===404)continue;if(!response.ok)continue;
+   const result=await response.json();if(result.erro)continue;
+   const address=String(result.logradouro??result.street??'').slice(0,180),bairro=String(result.bairro??result.neighborhood??'').slice(0,100),city=String(result.localidade??result.city??'').slice(0,100),state=String(result.uf??result.state??'').slice(0,2);
+   if(!city)continue;
+   return json(res,200,{cep:digits,logradouro:address,bairro,cidade:city,uf:state});
+  }catch(e){console.warn('Consulta CEP indisponível:',e.message)}}
+  err(502,'Não foi possível consultar o CEP agora. Preencha o endereço manualmente.');
+ }
  if(path==='/api/login'&&method==='POST'){
   const b=await body(req);const email=str(b.email,254).toLowerCase(),password=str(b.password,200);
   const row=db.prepare('SELECT * FROM users WHERE email=?').get(email);if(!row||!verify(password,row.hash))err(401,'Credenciais inválidas');
